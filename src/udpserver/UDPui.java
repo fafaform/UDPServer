@@ -5,12 +5,24 @@
  */
 package udpserver;
 
+import java.awt.BorderLayout;
 import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.SocketException;
-import java.net.UnknownHostException;
+import java.util.Timer;
+import java.util.TimerTask;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import javax.swing.JPanel;
+import org.jfree.chart.ChartFactory;
+import org.jfree.chart.ChartPanel;
+import org.jfree.chart.JFreeChart;
+import org.jfree.chart.axis.NumberAxis;
+import org.jfree.chart.plot.XYPlot;
+import org.jfree.data.xy.XYSeries;
+import org.jfree.data.xy.XYSeriesCollection;
 
 /**
  *
@@ -22,71 +34,98 @@ public class UDPui extends javax.swing.JFrame {
 
 //    private Boolean running = false;
     private Runnable background;
-    private Boolean match = true;
+    
+    private DatagramSocket serverSocket;
+    private Boolean available = true;
+    private XYSeries series;
 
     /**
      * Creates new form UDPui
      */
     public UDPui() {
+        // <editor-fold defaultstate="collapsed" desc="Graph">
+        series = new XYSeries("ECG Reading");
+        series.setMaximumItemCount(50);
+        XYSeriesCollection dataset = new XYSeriesCollection(series);
+        JFreeChart chart = ChartFactory.createXYLineChart("ECG Reading", "Time (seconds)", "Voltage (volt)", dataset);
+        
+        final XYPlot plot = chart.getXYPlot();
+        NumberAxis domain = (NumberAxis) plot.getDomainAxis();
+        
+        
+        JPanel jPanel1 = new JPanel();
+        jPanel1.setLayout(new java.awt.BorderLayout());
+        jPanel1.setVisible(true);
+        jPanel1.setSize(600, 500);
+        jPanel1.add(new ChartPanel(chart),BorderLayout.CENTER);
+        jPanel1.validate();
+        add(jPanel1);
+        // </editor-fold>
         initComponents();
-
-        background = new Runnable() {
-            public void run() {
-                int count = 1;
+        
+        background = new Runnable(){
+            public void run(){
                 try {
-                    DatagramSocket serverSocket = new DatagramSocket(9876);
-                    
-                    while (true) {
-//                        while (running) {
-                        byte[] receiveData = new byte[1024];
-                        byte[] sendData = new byte[1024];
-                        DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
-                        serverSocket.receive(receivePacket);
-//                String sentence = new String( receivePacket.getData());
-                        String message = new String(receivePacket.getData(), receivePacket.getOffset(), receivePacket.getLength());
-                        
-                        if (message.equals("end")) {
-                            valuePane.setText(valuePane.getText().toString() + message);
-//                                stBT.setText("START");
-                            if (match) {
-                                matchTx.setText("MATCH");
-                            } else {
-                                matchTx.setText("NOT MATCH");
-                            }
-                            
-                            //send back to mobile
-                            InetAddress IPAddress = receivePacket.getAddress();
-                            int port = receivePacket.getPort();
-                            String capitalizedSentence = count + "";
-//                                String capitalizedSentence = message.toUpperCase();
-                            sendData = capitalizedSentence.getBytes();
-                            DatagramPacket sendPacket
-                                    = new DatagramPacket(sendData, sendData.length, IPAddress, port);
-                            serverSocket.send(sendPacket);
-                            //end send back to mobile
-
-                            count = 1;
-                        } else {
-                            valuePane.setText(valuePane.getText().toString() + count + ":" + message + "\n");
-                            if (count != Integer.parseInt(message)) {
-                                match = false;
-                            }
-                            count++;
-                        }
-//                            InetAddress IPAddress = receivePacket.getAddress();
-//                            int port = receivePacket.getPort();
-//                            String capitalizedSentence = message.toUpperCase();
-//                            sendData = capitalizedSentence.getBytes();
-//                            DatagramPacket sendPacket
-//                                    = new DatagramPacket(sendData, sendData.length, IPAddress, port);
-//                            serverSocket.send(sendPacket);
+                        serverSocket = new DatagramSocket(9876);
+                    } catch (SocketException ex) {
+                        Logger.getLogger(UDPui.class.getName()).log(Level.SEVERE, null, ex);
                     }
-                } catch (UnknownHostException e) {
-                    e.printStackTrace();
-                } catch (SocketException e) {
-                    e.printStackTrace();
-                } catch (IOException e) {
-                    e.printStackTrace();
+                while(true){
+                    byte[] receiveData = new byte[1024];
+                    DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
+                    try {
+                        serverSocket.receive(receivePacket);
+                    } catch (IOException ex) {
+                        Logger.getLogger(UDPui.class.getName()).log(Level.SEVERE, null, ex);
+                    }
+
+                    Timer timer = new Timer();
+                    timer.schedule(new TimerTask() {
+                        @Override
+                        public void run() {
+                            available = false;
+                            System.out.println("Finish Timer");
+                        }
+                    }, 65 * 1000);
+
+                    if (!new String(receivePacket.getData(), receivePacket.getOffset(), receivePacket.getLength()).equals("")) {
+                        int count = 1;
+                        while (true) {
+                            try {
+                                receiveData = new byte[1024];
+                                byte[] sendData = new byte[1024];
+                                receivePacket = new DatagramPacket(receiveData, receiveData.length);
+
+                                serverSocket.receive(receivePacket);
+                                String message = new String(receivePacket.getData(), receivePacket.getOffset(), receivePacket.getLength());
+
+                                if (message.equals("end")) {
+                                    valuePane.setCaretPosition(valuePane.getDocument().getLength());
+                                    //send back to mobile
+                                    InetAddress IPAddress = receivePacket.getAddress();
+                                    int port = receivePacket.getPort();
+                                    String capitalizedSentence = count + "";
+                                    sendData = capitalizedSentence.getBytes();
+                                    DatagramPacket sendPacket
+                                            = new DatagramPacket(sendData, sendData.length, IPAddress, port);
+                                    serverSocket.send(sendPacket);
+                                    //end send back to mobile
+                                    count = 1;
+                                    break;
+                                } else if (available) {
+                                    
+                                    series.add(count, Double.parseDouble(message));
+                                    
+                                    
+                                    valuePane.setText(valuePane.getText().toString() + count + ":" + message + "\n");
+//                                    valuePane.setCaretPosition(valuePane.getDocument().getLength());
+                                    count++;
+                                }
+                            } catch (IOException ex) {
+                                Logger.getLogger(UDPui.class.getName()).log(Level.SEVERE, null, ex);
+                            }
+                        }
+                    }
                 }
             }
         };
@@ -105,7 +144,7 @@ public class UDPui extends javax.swing.JFrame {
         stBT = new javax.swing.JButton();
         jScrollPane1 = new javax.swing.JScrollPane();
         valuePane = new javax.swing.JTextArea();
-        matchTx = new javax.swing.JLabel();
+        graphPanel = new javax.swing.JPanel();
 
         setDefaultCloseOperation(javax.swing.WindowConstants.EXIT_ON_CLOSE);
 
@@ -118,34 +157,52 @@ public class UDPui extends javax.swing.JFrame {
 
         valuePane.setColumns(20);
         valuePane.setRows(5);
+        valuePane.addInputMethodListener(new java.awt.event.InputMethodListener() {
+            public void caretPositionChanged(java.awt.event.InputMethodEvent evt) {
+            }
+            public void inputMethodTextChanged(java.awt.event.InputMethodEvent evt) {
+                valuePaneInputMethodTextChanged(evt);
+            }
+        });
         jScrollPane1.setViewportView(valuePane);
 
-        matchTx.setText("MATCH");
+        javax.swing.GroupLayout graphPanelLayout = new javax.swing.GroupLayout(graphPanel);
+        graphPanel.setLayout(graphPanelLayout);
+        graphPanelLayout.setHorizontalGroup(
+            graphPanelLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+            .addGap(0, 590, Short.MAX_VALUE)
+        );
+        graphPanelLayout.setVerticalGroup(
+            graphPanelLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+            .addGap(0, 0, Short.MAX_VALUE)
+        );
 
         javax.swing.GroupLayout layout = new javax.swing.GroupLayout(getContentPane());
         getContentPane().setLayout(layout);
         layout.setHorizontalGroup(
             layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-            .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, layout.createSequentialGroup()
-                .addContainerGap(483, Short.MAX_VALUE)
-                .addComponent(matchTx)
-                .addGap(271, 271, 271)
-                .addComponent(stBT)
-                .addGap(36, 36, 36))
             .addGroup(layout.createSequentialGroup()
                 .addContainerGap()
-                .addComponent(jScrollPane1)
-                .addContainerGap())
+                .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+                    .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, layout.createSequentialGroup()
+                        .addGap(0, 0, Short.MAX_VALUE)
+                        .addComponent(stBT)
+                        .addGap(36, 36, 36))
+                    .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, layout.createSequentialGroup()
+                        .addComponent(graphPanel, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                        .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                        .addComponent(jScrollPane1, javax.swing.GroupLayout.PREFERRED_SIZE, 274, javax.swing.GroupLayout.PREFERRED_SIZE)
+                        .addContainerGap())))
         );
         layout.setVerticalGroup(
             layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
             .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, layout.createSequentialGroup()
                 .addContainerGap()
-                .addComponent(jScrollPane1, javax.swing.GroupLayout.DEFAULT_SIZE, 489, Short.MAX_VALUE)
+                .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
+                    .addComponent(graphPanel, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                    .addComponent(jScrollPane1, javax.swing.GroupLayout.DEFAULT_SIZE, 489, Short.MAX_VALUE))
                 .addGap(18, 18, 18)
-                .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
-                    .addComponent(stBT)
-                    .addComponent(matchTx))
+                .addComponent(stBT)
                 .addGap(27, 27, 27))
         );
 
@@ -157,6 +214,8 @@ public class UDPui extends javax.swing.JFrame {
 //        if(stBT.getText().toString().equals("START")){
 //            stBT.setText("STOP");
         valuePane.setText("");
+        series.clear();
+        available = true;
         if (!backgroundProcess.isAlive()) {
             stBT.setText("CLEAR");
             backgroundProcess.start();
@@ -166,6 +225,11 @@ public class UDPui extends javax.swing.JFrame {
 //            stBT.setText("START");
 //        }
     }//GEN-LAST:event_stBTActionPerformed
+
+    private void valuePaneInputMethodTextChanged(java.awt.event.InputMethodEvent evt) {//GEN-FIRST:event_valuePaneInputMethodTextChanged
+        // TODO add your handling code here:
+        
+    }//GEN-LAST:event_valuePaneInputMethodTextChanged
 
     /**
      * @param args the command line arguments
@@ -203,8 +267,8 @@ public class UDPui extends javax.swing.JFrame {
     }
 
     // Variables declaration - do not modify//GEN-BEGIN:variables
+    private javax.swing.JPanel graphPanel;
     private javax.swing.JScrollPane jScrollPane1;
-    private javax.swing.JLabel matchTx;
     private javax.swing.JButton stBT;
     private javax.swing.JTextArea valuePane;
     // End of variables declaration//GEN-END:variables
