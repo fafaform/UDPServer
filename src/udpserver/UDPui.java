@@ -6,13 +6,18 @@
 package udpserver;
 
 import java.awt.BorderLayout;
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.SocketException;
-import java.util.Timer;
-import java.util.TimerTask;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.swing.JPanel;
@@ -29,12 +34,13 @@ import org.jfree.data.xy.XYSeriesCollection;
  * @author ZENBOOK
  */
 public class UDPui extends javax.swing.JFrame {
-
+    private static int total_byte = 1638400;
     private Thread backgroundProcess;
-
+    private ArrayList<DataCount> countSeparate;
+    private Map<String, Integer> counting = new HashMap<String, Integer>();
 //    private Boolean running = false;
     private Runnable background;
-    
+
     private DatagramSocket serverSocket;
     private Boolean available = true;
     private XYSeries series;
@@ -48,84 +54,248 @@ public class UDPui extends javax.swing.JFrame {
         series.setMaximumItemCount(50);
         XYSeriesCollection dataset = new XYSeriesCollection(series);
         JFreeChart chart = ChartFactory.createXYLineChart("ECG Reading", "Time (seconds)", "Voltage (volt)", dataset);
-        
+
         final XYPlot plot = chart.getXYPlot();
         NumberAxis domain = (NumberAxis) plot.getDomainAxis();
-        
-        
+
         JPanel jPanel1 = new JPanel();
         jPanel1.setLayout(new java.awt.BorderLayout());
         jPanel1.setVisible(true);
         jPanel1.setSize(600, 500);
-        jPanel1.add(new ChartPanel(chart),BorderLayout.CENTER);
+        jPanel1.add(new ChartPanel(chart), BorderLayout.CENTER);
         jPanel1.validate();
         add(jPanel1);
         // </editor-fold>
         initComponents();
-        
-        background = new Runnable(){
-            public void run(){
+        receiveUDP();
+//        tempReceiveUDP();
+//        new UDPServer(valuePane);
+    }
+
+    //<editor-fold defaultstate="collapsed" desc="tempReceiveUDP">
+    private void tempReceiveUDP() {
+        background = new Runnable() {
+            public void run() {
                 try {
-                        serverSocket = new DatagramSocket(9876);
-                    } catch (SocketException ex) {
-                        Logger.getLogger(UDPui.class.getName()).log(Level.SEVERE, null, ex);
-                    }
-                while(true){
-                    byte[] receiveData = new byte[1024];
-                    DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
+                    serverSocket = new DatagramSocket(9876);
+                } catch (SocketException ex) {
+                    Logger.getLogger(UDPui.class.getName()).log(Level.SEVERE, null, ex);
+                }
+//                while (true) {
+//                    byte[] receiveData = new byte[1024];
+//                    DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
+
+//                    if (!new String(receivePacket.getData(), receivePacket.getOffset(), receivePacket.getLength()).equals("")) {
+//                        int count = 1;
+                while (true) {
                     try {
+                        byte[] receiveData = new byte[total_byte];
+                        byte[] sendData = new byte[32];
+                        DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
+
                         serverSocket.receive(receivePacket);
+                        String message = new String(receivePacket.getData(), receivePacket.getOffset(), receivePacket.getLength());
+//                                String word = serverSocket.getInetAddress().toString();
+//                                Integer count = counting.get(word);
+//                                if (count == null) {
+//                                    counting.put(word, 1);
+//                                }
+//                                else {
+//                                    counting.put(word, count + 1);
+//                                }
+
+                        boolean looprun = true;
+                        String word = receivePacket.getAddress().getHostAddress();
+                        System.out.println(word);
+//                        System.out.println(message);
+                        while (looprun) {
+                            if (message.contains("&")) {
+                                message = message.substring(message.indexOf("&") + 1);
+                                Integer count = counting.get(word);
+                                if (count == null) {
+                                    counting.put(word, 2);
+                                } else {
+                                    counting.put(word, count + 1);
+                                }
+//                                System.out.println(count + ":" + message);
+                            } else {
+                                looprun = false;
+                            }
+                        }
+
+                        if (message.equals("end")) {
+                            valuePane.setCaretPosition(valuePane.getDocument().getLength());
+                            //send back to mobile
+                            InetAddress IPAddress = receivePacket.getAddress();
+                            int port = receivePacket.getPort();
+                            String capitalizedSentence = counting.get(word) + "";
+                            sendData = capitalizedSentence.getBytes();
+                            DatagramPacket sendPacket
+                                    = new DatagramPacket(sendData, sendData.length, IPAddress, port);
+                            serverSocket.send(sendPacket);
+                            //end send back to mobile
+//                                    count = 1;
+//                                    break;
+                            counting.remove(word);
+                        } else if (available) {
+
+//                                    series.add(count, Double.parseDouble(message));
+//                                    valuePane.setText(valuePane.getText().toString() + count + ":" + message + "\n");
+//                                    valuePane.setCaretPosition(valuePane.getDocument().getLength());
+//                                    count++;
+                        }
                     } catch (IOException ex) {
                         Logger.getLogger(UDPui.class.getName()).log(Level.SEVERE, null, ex);
                     }
+                }
+//                    }
+//                }
+            }
+        };
+        backgroundProcess = new Thread(background);
+    }
+//</editor-fold>
+    
+    private void receiveUDP() {
+        countSeparate = new ArrayList<>();
+        background = new Runnable() {
+            public void run() {
+                try {
+                    serverSocket = new DatagramSocket(9876);
+                } catch (SocketException ex) {
+                    Logger.getLogger(UDPui.class.getName()).log(Level.SEVERE, null, ex);
+                }
+//                while (true) {
+//                    byte[] receiveData = new byte[1024];
+//                    DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
 
-                    Timer timer = new Timer();
-                    timer.schedule(new TimerTask() {
-                        @Override
-                        public void run() {
-                            available = false;
-                            System.out.println("Finish Timer");
-                        }
-                    }, 65 * 1000);
+                    //<editor-fold defaultstate="collapsed" desc="Start timer after receive a packet">
+//                    try {
+//                        serverSocket.receive(receivePacket);
+//                        series.clear();
+//                        valuePane.setText("");
+                    available = true;
+//                        System.out.println(available);
+//                    } catch (IOException ex) {
+//                        Logger.getLogger(UDPui.class.getName()).log(Level.SEVERE, null, ex);
+//                    }
 
-                    if (!new String(receivePacket.getData(), receivePacket.getOffset(), receivePacket.getLength()).equals("")) {
-                        int count = 1;
+//                    Timer timer = new Timer();
+//                    timer.schedule(new TimerTask() {
+//                        @Override
+//                        public void run() {
+//                            available = false;
+//                            System.out.println("Finish Timer");
+//                        }
+//                    }, 1 * 1000);
+//</editor-fold>
+//                    if (!new String(receivePacket.getData(), receivePacket.getOffset(), receivePacket.getLength()).equals("")) {
+//                        int count = 1;
+//                        while (available) {
                         while (true) {
                             try {
-                                receiveData = new byte[1024];
-                                byte[] sendData = new byte[1024];
-                                receivePacket = new DatagramPacket(receiveData, receiveData.length);
+                                byte[] receiveData = new byte[total_byte];
+                                byte[] sendData = new byte[32];
+                                DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
 
                                 serverSocket.receive(receivePacket);
+                                
+                                String word = receivePacket.getAddress().getHostAddress();
+                                System.out.println(word);
+                                
                                 String message = new String(receivePacket.getData(), receivePacket.getOffset(), receivePacket.getLength());
+                                boolean looprun = true;
 
-                                if (message.equals("end")) {
-                                    valuePane.setCaretPosition(valuePane.getDocument().getLength());
+//                                System.out.println(message);
+                                while (looprun) {
+                                    Integer countt = counting.get(word);
+                                    if (message.contains("&")) {
+                                        message = message.substring(message.indexOf("&") + 1);
+//                                        count++;
+//                                        Integer countt = counting.get(word);
+                                        if (countt == null) {
+                                            counting.put(word, 1);
+                                        } else {
+                                            counting.put(word, countt + 1);
+                                        }
+//                                        System.out.println(count + ":" + message);
+                                    } else {
+                                        if (countt == null) {
+                                            counting.put(word, 1);
+                                        } else {
+                                            counting.put(word, countt + 1);
+                                        }
+                                        System.out.println(counting.get(word));
+                                        looprun = false;
+                                    }
+                                }
+
+//                                if (message.equals("end")) {
+                                if (message.contains("end")) {
+                                    message = message.substring(message.indexOf("end")+3);
+//                                    valuePane.setCaretPosition(valuePane.getDocument().getLength());
                                     //send back to mobile
                                     InetAddress IPAddress = receivePacket.getAddress();
                                     int port = receivePacket.getPort();
-                                    String capitalizedSentence = count + "";
+//                                    String capitalizedSentence = count + "";
+
+                                    String capitalizedSentence = counting.get(word) + "";
                                     sendData = capitalizedSentence.getBytes();
                                     DatagramPacket sendPacket
                                             = new DatagramPacket(sendData, sendData.length, IPAddress, port);
                                     serverSocket.send(sendPacket);
+                                    
+                                    String timeStamp = new SimpleDateFormat("yyyy-MM-dd_HH:mm:ss").format(Calendar.getInstance().getTime());
+                                    String content = IPAddress.getCanonicalHostName() + "," + timeStamp + "," + (counting.get(word)-1) + "," + message;
+                                    saveFile(content);
                                     //end send back to mobile
-                                    count = 1;
-                                    break;
+//                                    System.out.println(counting.get(word));
+//                                    count = 1;
+                                    counting.remove(word);
+//                                    break;
                                 } else if (available) {
-                                    
-                                    series.add(count, Double.parseDouble(message));
-                                    
-                                    
-                                    valuePane.setText(valuePane.getText().toString() + count + ":" + message + "\n");
+
+//<editor-fold defaultstate="collapsed" desc="check hasmap key">
+//                                    if (hm.size() > 0 && hm.containsKey(serverSocket.getInetAddress().getHostAddress())) {
+//                                        hm.put(foundKey, new Integer(((int) hm.get(foundKey)) + 1));
+//                                        hm.put(serverSocket.getInetAddress().getHostAddress(), new Integer(((int) hm.get(serverSocket.getInetAddress().getHostAddress())) + 1));
+//                                    } else {
+//                                        hm.put(serverSocket.getInetAddress().getHostAddress(), 1);
+//                                        hm.entrySet().add(new Map<String, Integer>.Entry<String, Integer>());
+//                                    }
+//</editor-fold>
+//                                    series.add(count, Double.parseDouble(message));
+//                                    valuePane.setText(valuePane.getText().toString() + count + ":" + message + "\n");
 //                                    valuePane.setCaretPosition(valuePane.getDocument().getLength());
-                                    count++;
+//                                    count++;
                                 }
                             } catch (IOException ex) {
                                 Logger.getLogger(UDPui.class.getName()).log(Level.SEVERE, null, ex);
+                                valuePane.setText(valuePane.getText().toString() + "IOException" + "\n");
                             }
                         }
+//                        valuePane.setText(valuePane.getText().toString() + "Out of while loop" + "\n");
+//                    }
+//                }
+            }
+
+            private void saveFile(String content) {
+                try {
+                    File desktop = new File(System.getProperty("user.home"), "Desktop");
+                    File file = new File(desktop.getAbsoluteFile()+"/udp.csv");
+                    if (!file.exists()) {
+                        file.createNewFile();
                     }
+                    FileOutputStream fop=new FileOutputStream(file,true);
+                    fop.write((content + "\n").getBytes());
+                    fop.flush();
+                    fop.close();
+//                    String timeStamp = new SimpleDateFormat("yyyy-MM-dd_HH:mm:ss").format(Calendar.getInstance().getTime());
+//                    valuePane.setText(valuePane.getText().toString() + timeStamp + "\n");
+                } catch (IOException ex) {
+                    Logger.getLogger(UDPui.class.getName()).log(Level.SEVERE, null, ex);
+                    String timeStamp = new SimpleDateFormat("yyyy-MM-dd_HH:mm:ss").format(Calendar.getInstance().getTime());
+                    valuePane.setText(valuePane.getText().toString() + timeStamp + "\n");
                 }
             }
         };
@@ -228,7 +398,7 @@ public class UDPui extends javax.swing.JFrame {
 
     private void valuePaneInputMethodTextChanged(java.awt.event.InputMethodEvent evt) {//GEN-FIRST:event_valuePaneInputMethodTextChanged
         // TODO add your handling code here:
-        
+
     }//GEN-LAST:event_valuePaneInputMethodTextChanged
 
     /**
