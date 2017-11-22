@@ -230,8 +230,11 @@ public class UDPui extends javax.swing.JFrame {
                                     }
                                 }
 
-//                                if (message.equals("end")) {
-                                if (message.contains("end")) {
+                                if (message.contains("start")) {
+                                    if(counting.get(word) != null){
+                                        counting.remove(word);
+                                    }
+                                } else if (message.contains("end")) {
                                     message = message.substring(message.indexOf("end")+3);
 //                                    valuePane.setCaretPosition(valuePane.getDocument().getLength());
                                     //send back to mobile
